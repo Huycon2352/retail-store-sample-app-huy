@@ -25,9 +25,23 @@ jobs:
         with:
           fetch-depth: 0 # SonarQube cần fetch-depth: 0 để phân tích lịch sử git chính xác
 
+      # ---- THÊM BƯỚC NÀY ĐỂ TẠO FILE .CLASS ----
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'corretto'
+
+      - name: Compile Java Code
+        run: |
+          cd ${{ env.CONTEXT_PATH }}
+          chmod +x mvnw
+          ./mvnw compile -DskipTest
       # -------------------------------------------------------------
       # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD (ACTION MỚI)
       # -------------------------------------------------------------
+
+      
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
