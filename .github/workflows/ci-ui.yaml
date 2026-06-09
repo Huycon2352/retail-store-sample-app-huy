@@ -1,4 +1,4 @@
-name:  CI - UI Service
+name: CI - UI Service
 
 on:
   push:
@@ -26,19 +26,20 @@ jobs:
           fetch-depth: 0 # SonarQube cần fetch-depth: 0 để phân tích lịch sử git chính xác
 
       # -------------------------------------------------------------
-      # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
+      # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD (ACTION MỚI)
       # -------------------------------------------------------------
-      - name: SonarQube Cloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ vars.SONAR_URL }} # Đảm bảo bạn đã khai báo Repository Variable mang tên SONAR_URL (giá trị: https://sonarcloud.io)
         with:
-          projectBaseDir: ${{ env.CONTEXT_PATH }}
           args: >
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.projectBaseDir=${{ env.CONTEXT_PATH }}
             -Dsonar.sources=.
+            -X
 
       # -------------------------------------------------------------
       # 2. QUÉT BẢO MẬT THƯ MỤC FILE (TRIVY FS)
@@ -87,32 +88,3 @@ jobs:
           exit-code: '1' # Đổi thành 1 để chặn không cho push nếu image dính lỗi
           severity: 'CRITICAL,HIGH'
 
-      # -------------------------------------------------------------
-      # 6. PUSH IMAGE LÊN AMAZON ECR (Mở comment từ bạn)
-      # -------------------------------------------------------------
-      - name: Push to Amazon ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker push $ECR_REGISTRY/${{ env.ECR_REPO }}:$IMAGE_TAG
-
-      # -------------------------------------------------------------
-      # 7. CẬP NHẬT GITOPS REPOSITORY (Dành riêng cho UI)
-      # -------------------------------------------------------------
-      - name: Update GitOps Repository
-        env:
-          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          git clone https://x-access-token:${GITOPS_TOKEN}@github.com/tehn145/devsecops-gitops-config.git
-          cd devsecops-gitops-config/k8s/overlays/${ENVIRONMENT}
-          
-          # Cập nhật Tag mới vào file kustomization
-          sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
-
-          git config user.name "GitHub Actions Bot"
-          git config user.email "actions@github.com"
-          git add kustomization.yaml
-          git diff-index --quiet HEAD || git commit -m "Auto-update UI image to tag ${IMAGE_TAG} via CI"
-          git push
