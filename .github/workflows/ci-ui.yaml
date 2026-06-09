@@ -4,16 +4,16 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - 'src/ui/**' # Chỉ chạy khi có thay đổi trong thư mục UI
-  workflow_dispatch: # Giữ lại nút bấm tay nếu cần
+      - 'src/ui/**'
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-southeast-1
   ENVIRONMENT: dev
   CONTEXT_PATH: ./src/ui
   ECR_REPO: devsecops-dev-ui
-  SONAR_PROJECT_KEY: devsecops-retail-store-ui # Key bạn đặt trên Sonar Cloud
-  SONAR_ORGANIZATION: huycon2352code       # Tên Organization trên Sonar Cloud
+  SONAR_PROJECT_KEY: devsecops-retail-store-ui
+  SONAR_ORGANIZATION: huycon2352code
 
 jobs:
   build-secure-deploy:
@@ -23,36 +23,37 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # SonarQube cần fetch-depth: 0 để phân tích lịch sử git chính xác
+          fetch-depth: 0
 
-      # ---- THÊM BƯỚC NÀY ĐỂ TẠO FILE .CLASS ----
-      - name: Set up JDK 21
+      # ---- 1. TỐI ƯU CACHE CHO MAVEN DEPENDENCIES ----
+      - name: Set up JDK 21 với Cache của Maven
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'corretto'
+          cache: 'maven' # <--- Bật tính năng tự động cache thư mục .m2 của GitHub Actions
 
       - name: Compile Java Code
         run: |
           cd ${{ env.CONTEXT_PATH }}
           chmod +x mvnw
-          ./mvnw compile -DskipTest
+          ./mvnw compile -DskipTests
+          
       # -------------------------------------------------------------
-      # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD (ACTION MỚI)
+      # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
       # -------------------------------------------------------------
-
-      
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: ${{ vars.SONAR_URL }} # Đảm bảo bạn đã khai báo Repository Variable mang tên SONAR_URL (giá trị: https://sonarcloud.io)
+          SONAR_HOST_URL: ${{ vars.SONAR_URL }}
         with:
           args: >
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectBaseDir=${{ env.CONTEXT_PATH }}
             -Dsonar.sources=.
+            -Dsonar.java.binaries=target/classes
             -X
 
       # -------------------------------------------------------------
@@ -64,18 +65,39 @@ jobs:
           scan-type: 'fs'
           scan-ref: ${{ env.CONTEXT_PATH }}
           format: 'table'
-          exit-code: '1' # Đổi thành 1 để chặn pipeline nếu phát hiện lỗi nặng
+          exit-code: '1' 
           severity: 'CRITICAL,HIGH'
 
       # -------------------------------------------------------------
-      # 3. BUILD DOCKER IMAGE
+      # *. KẾT NỐI AWS & LOGIN ECR
+      # -------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # ---- 2. TỐI ƯU CACHE CHO DOCKER LAYERS (BUILDKIT) ----
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3 # <--- Kích hoạt Buildx để dùng tính năng cache nâng cao
+
+      # -------------------------------------------------------------
+      # 3. BUILD DOCKER IMAGE (TẬN DỤNG GITHUB ACTIONS CACHE)
       # -------------------------------------------------------------
       - name: Build Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/${{ env.ECR_REPO }}:$IMAGE_TAG ${{ env.CONTEXT_PATH }}
+        uses: docker/build-push-action@v6 # <--- Đổi từ lệnh "run" sang action chuẩn để hỗ trợ cache gha
+        with:
+          context: ${{ env.CONTEXT_PATH }}
+          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}
+          push: false # Chưa push ngay vì còn bước quét Trivy Image phía dưới
+          load: true  # Load image vào bộ nhớ local của máy Runner để Trivy có thể quét được
+          cache-from: type=gha # <--- Lấy cache từ kho lưu trữ GitHub Actions mang về dùng
+          cache-to: type=gha,mode=max # <--- Đóng gói và đẩy layer mới lên kho cache GitHub Actions
 
       # -------------------------------------------------------------
       # 4. QUÉT BẢO MẬT DOCKER IMAGE (TRIVY IMAGE)
@@ -85,6 +107,6 @@ jobs:
         with:
           image-ref: '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}'
           format: 'table'
-          exit-code: '1' # Đổi thành 1 để chặn không cho push nếu image dính lỗi
+          exit-code: '1' 
           severity: 'CRITICAL,HIGH'
 
