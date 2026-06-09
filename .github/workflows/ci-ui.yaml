@@ -1,4 +1,4 @@
-name: DevSecOps CI - UI Service
+name:  CI - UI Service
 
 on:
   push:
