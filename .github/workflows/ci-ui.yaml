@@ -1,0 +1,118 @@
+name: DevSecOps CI - UI Service
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'src/ui/**' # Chỉ chạy khi có thay đổi trong thư mục UI
+  workflow_dispatch: # Giữ lại nút bấm tay nếu cần
+
+env:
+  AWS_REGION: ap-southeast-1
+  ENVIRONMENT: dev
+  CONTEXT_PATH: ./src/ui
+  ECR_REPO: devsecops-dev-ui
+  SONAR_PROJECT_KEY: devsecops-retail-store-ui # Key bạn đặt trên Sonar Cloud
+  SONAR_ORGANIZATION: huycon2352code       # Tên Organization trên Sonar Cloud
+
+jobs:
+  build-secure-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # SonarQube cần fetch-depth: 0 để phân tích lịch sử git chính xác
+
+      # -------------------------------------------------------------
+      # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
+      # -------------------------------------------------------------
+      - name: SonarQube Cloud Scan
+        uses: SonarSource/sonarcloud-github-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: ${{ env.CONTEXT_PATH }}
+          args: >
+            -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
+            -Dsonar.sources=.
+
+      # -------------------------------------------------------------
+      # 2. QUÉT BẢO MẬT THƯ MỤC FILE (TRIVY FS)
+      # -------------------------------------------------------------
+      - name: Run Trivy vulnerability scanner in fs mode
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: ${{ env.CONTEXT_PATH }}
+          format: 'table'
+          exit-code: '1' # Đổi thành 1 để chặn pipeline nếu phát hiện lỗi nặng
+          severity: 'CRITICAL,HIGH'
+
+      # -------------------------------------------------------------
+      # 3. KẾT NỐI AWS & LOGIN ECR
+      # -------------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -------------------------------------------------------------
+      # 4. BUILD DOCKER IMAGE
+      # -------------------------------------------------------------
+      - name: Build Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/${{ env.ECR_REPO }}:$IMAGE_TAG ${{ env.CONTEXT_PATH }}
+
+      # -------------------------------------------------------------
+      # 5. QUÉT BẢO MẬT DOCKER IMAGE (TRIVY IMAGE)
+      # -------------------------------------------------------------
+      - name: Run Trivy vulnerability scanner on Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1' # Đổi thành 1 để chặn không cho push nếu image dính lỗi
+          severity: 'CRITICAL,HIGH'
+
+      # -------------------------------------------------------------
+      # 6. PUSH IMAGE LÊN AMAZON ECR (Mở comment từ bạn)
+      # -------------------------------------------------------------
+      - name: Push to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker push $ECR_REGISTRY/${{ env.ECR_REPO }}:$IMAGE_TAG
+
+      # -------------------------------------------------------------
+      # 7. CẬP NHẬT GITOPS REPOSITORY (Dành riêng cho UI)
+      # -------------------------------------------------------------
+      - name: Update GitOps Repository
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          git clone https://x-access-token:${GITOPS_TOKEN}@github.com/tehn145/devsecops-gitops-config.git
+          cd devsecops-gitops-config/k8s/overlays/${ENVIRONMENT}
+          
+          # Cập nhật Tag mới vào file kustomization
+          sed -i "s|newTag: .*|newTag: ${IMAGE_TAG}|g" kustomization.yaml
+
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add kustomization.yaml
+          git diff-index --quiet HEAD || git commit -m "Auto-update UI image to tag ${IMAGE_TAG} via CI"
+          git push
