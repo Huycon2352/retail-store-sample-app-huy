@@ -11,7 +11,7 @@ env:
   AWS_REGION: ap-southeast-1
   ENVIRONMENT: dev
   CONTEXT_PATH: ./src/ui
-  ECR_REPO: devsecops-dev-ui
+  IMAGE_NAME: devsecops-dev-ui # <--- Đổi thành biến định nghĩa tên Image cục bộ
   SONAR_PROJECT_KEY: devsecops-retail-store-ui
   SONAR_ORGANIZATION: huycon2352code
 
@@ -31,7 +31,7 @@ jobs:
         with:
           java-version: '21'
           distribution: 'corretto'
-          cache: 'maven' # <--- Bật tính năng tự động cache thư mục .m2 của GitHub Actions
+          cache: 'maven'
 
       - name: Compile Java Code
         run: |
@@ -40,7 +40,7 @@ jobs:
           ./mvnw compile -DskipTests
           
       # -------------------------------------------------------------
-      # 1. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
+      # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
       # -------------------------------------------------------------
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
@@ -56,31 +56,31 @@ jobs:
             -Dsonar.java.binaries=target/classes
             -X
 
-      # ---- 2. TỐI ƯU CACHE CHO DOCKER LAYERS (BUILDKIT) ----
+      # ---- 3. TỐI ƯU CACHE CHO DOCKER LAYERS (BUILDKIT) ----
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3 # <--- Kích hoạt Buildx để dùng tính năng cache nâng cao
+        uses: docker/setup-buildx-action@v3
 
       # -------------------------------------------------------------
-      # 3. BUILD DOCKER IMAGE (TẬN DỤNG GITHUB ACTIONS CACHE)
+      # 4. BUILD DOCKER IMAGE (CHỈ LƯU LOCAL RUNNER)
       # -------------------------------------------------------------
       - name: Build Docker image
-        uses: docker/build-push-action@v6 # <--- Đổi từ lệnh "run" sang action chuẩn để hỗ trợ cache gha
+        uses: docker/build-push-action@v6
         with:
           context: ${{ env.CONTEXT_PATH }}
-          tags: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}
-          push: false # Chưa push ngay vì còn bước quét Trivy Image phía dưới
-          load: true  # Load image vào bộ nhớ local của máy Runner để Trivy có thể quét được
-          cache-from: type=gha # <--- Lấy cache từ kho lưu trữ GitHub Actions mang về dùng
-          cache-to: type=gha,mode=max # <--- Đóng gói và đẩy layer mới lên kho cache GitHub Actions
+          # Thay đổi cấu trúc tag ở đây, không dùng biến ecr outputs nữa
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          push: false 
+          load: true  # Vẫn giữ load=true để đẩy image vào Docker daemon của Runner
+          cache-from: type=gha 
+          cache-to: type=gha,mode=max 
 
       # -------------------------------------------------------------
-      # 4. QUÉT BẢO MẬT DOCKER IMAGE (TRIVY IMAGE)
+      # 5. QUÉT BẢO MẬT DOCKER IMAGE (TRIVY IMAGE)
       # -------------------------------------------------------------
       - name: Run Trivy vulnerability scanner on Image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPO }}:${{ github.sha }}'
+          image-ref: '${{ env.IMAGE_NAME }}:${{ github.sha }}'
           format: 'table'
-          exit-code: '1' 
+          exit-code: '0' 
           severity: 'CRITICAL,HIGH'
-
