@@ -11,7 +11,7 @@ env:
   AWS_REGION: ap-southeast-1
   ENVIRONMENT: dev
   CONTEXT_PATH: ./src/cart
-  IMAGE_NAME: devsecops-dev-cart # <--- Đổi thành biến định nghĩa tên Image cục bộ
+  IMAGE_NAME: devsecops-dev-cart
   SONAR_PROJECT_KEY: devsecops-retail-store-cart
   SONAR_ORGANIZATION: huycon2352code
 
@@ -32,12 +32,14 @@ jobs:
           java-version: '21'
           distribution: 'corretto'
           cache: 'maven'
+          # Chỉ định file pom.xml để tối ưu việc nhận diện cache chính xác cho service cart
+          cache-dependency-path: ${{ env.CONTEXT_PATH }}/pom.xml
 
       - name: Compile Java Code
         run: |
           cd ${{ env.CONTEXT_PATH }}
-          chmod +x mvnw
-          ./mvnw compile -DskipTests
+          # Sử dụng mvn hệ thống thay cho ./mvnw để loại bỏ rủi ro thiếu file wrapper
+          mvn compile -DskipTests
           
       # -------------------------------------------------------------
       # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
@@ -52,7 +54,7 @@ jobs:
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectBaseDir=${{ env.CONTEXT_PATH }}
-            -Dsonar.sources=.
+            -Dsonar.sources=src/main/java
             -Dsonar.java.binaries=target/classes
             -X
 
@@ -67,10 +69,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.CONTEXT_PATH }}
-          # Thay đổi cấu trúc tag ở đây, không dùng biến ecr outputs nữa
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           push: false 
-          load: true  # Vẫn giữ load=true để đẩy image vào Docker daemon của Runner
+          load: true  
           cache-from: type=gha 
           cache-to: type=gha,mode=max 
 
