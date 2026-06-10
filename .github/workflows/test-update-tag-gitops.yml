@@ -43,37 +43,26 @@ jobs:
       # ==========================================================
       - name: Update GitOps Manifest
         run: |
-          # 1. Clone repo GitOps bằng token
           git clone https://${{ secrets.GITOPS_TOKEN }}@github.com/${{ env.GITOPS_REPO }}.git gitops
+
           cd gitops/k8s/overlays/dev
 
-          # 2. Định nghĩa file kustomization cần sửa
-          FILE=k8s/overlays/dev/kustomization.yaml
-          
-          # Lấy thông tin từ các ô Input bạn nhập lúc bấm nút chạy
-          SERVICE_NAME="${{ github.event.inputs.service_name }}"
-          MOCK_TAG="${{ github.event.inputs.test_tag }}"
-          
-          echo "Đang test cập nhật service: $SERVICE_NAME với tag: $MOCK_TAG"
+          echo "Đang update $SERVICE_NAME -> $MOCK_TAG"
 
-          # 3. Chạy kustomize để sửa tag trực tiếp
           kustomize edit set image \
-            $SERVICE_NAME=${{ env.AWS_ECR_REGISTRY }}/$SERVICE_NAME:$MOCK_TAG
+            $SERVICE_NAME=248195880649.dkr.ecr.ap-southeast-1.amazonaws.com/$SERVICE_NAME:$MOCK_TAG
 
-          # 4. Cấu hình Git Bot
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # 5. Add file thay đổi
-          git add $FILE
+          git add kustomization.yaml
 
-          # 6. Kiểm tra xem file thực sự có thay đổi không
           if git diff --cached --quiet; then
-            echo "Không có thay đổi nào so với trước đó! Bạn hãy thử nhập một tag mới hoàn toàn xem."
+            echo "No changes"
             exit 0
           fi
 
-          # 7. Commit và push lên nhánh main của repo GitOps
-          git commit -m "chore(test): test update $SERVICE_NAME image to $MOCK_TAG"
+          git commit -m "test update $SERVICE_NAME -> $MOCK_TAG"
+
           git pull --rebase origin main
           git push origin main
