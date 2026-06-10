@@ -11,7 +11,7 @@ env:
   AWS_REGION: ap-southeast-1
   ENVIRONMENT: dev
   CONTEXT_PATH: ./src/catalog
-  IMAGE_NAME: devsecops-dev-catalog # <--- Đổi thành biến định nghĩa tên Image cục bộ
+  IMAGE_NAME: devsecops-dev-catalog
   SONAR_PROJECT_KEY: devsecops-retail-store-catalog
   SONAR_ORGANIZATION: huycon2352code
 
@@ -25,22 +25,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ---- 1. TỐI ƯU CACHE CHO MAVEN DEPENDENCIES ----
-      - name: Set up JDK 21 với Cache của Maven
-        uses: actions/setup-java@v4
+      # ---- 1. THIẾT LẬP GO VÀ TỐI ƯU CACHE GO MODULES ----
+      - name: Set up Go
+        uses: actions/setup-go@v5
         with:
-          java-version: '21'
-          distribution: 'corretto'
-          cache: 'maven'
+          go-version: '1.22' # Bạn có thể đổi thành phiên bản Go tương ứng của dự án (ví dụ: 1.21, 1.23)
+          cache: true
+          cache-dependency-path: ${{ env.CONTEXT_PATH }}/go.sum
 
-      - name: Compile Java Code
+      - name: Compile Go Code
         run: |
           cd ${{ env.CONTEXT_PATH }}
-          chmod +x mvnw
-          ./mvnw compile -DskipTests
+          go mod download
+          go build -v ./...
           
       # -------------------------------------------------------------
-      # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
+      # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD (CHO GO)
       # -------------------------------------------------------------
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
@@ -53,7 +53,9 @@ jobs:
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectBaseDir=${{ env.CONTEXT_PATH }}
             -Dsonar.sources=.
-            -Dsonar.java.binaries=target/classes
+            -Dsonar.exclusions=**/*_test.go,**/vendor/**
+            -Dsonar.tests=.
+            -Dsonar.test.inclusions=**/*_test.go
             -X
 
       # ---- 3. TỐI ƯU CACHE CHO DOCKER LAYERS (BUILDKIT) ----
@@ -67,10 +69,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.CONTEXT_PATH }}
-          # Thay đổi cấu trúc tag ở đây, không dùng biến ecr outputs nữa
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           push: false 
-          load: true  # Vẫn giữ load=true để đẩy image vào Docker daemon của Runner
+          load: true  
           cache-from: type=gha 
           cache-to: type=gha,mode=max 
 
