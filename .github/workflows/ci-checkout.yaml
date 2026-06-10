@@ -8,10 +8,8 @@ on:
     paths:
       - "src/checkout/**"
 
-  workflow_dispatch:
-
 concurrency:
-  group: checkout-${{ github.ref }}
+  group: checkout-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

@@ -8,10 +8,8 @@ on:
     paths:
       - "src/ui/**"
 
-  workflow_dispatch:
-
 concurrency:
-  group: ui-${{ github.ref }}
+  group: ui-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:

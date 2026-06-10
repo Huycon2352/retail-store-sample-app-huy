@@ -8,10 +8,8 @@ on:
     paths:
       - "src/orders/**"
 
-  workflow_dispatch:
-
 concurrency:
-  group: orders-${{ github.ref }}
+  group: orders-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
