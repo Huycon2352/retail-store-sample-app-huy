@@ -28,3 +28,4 @@ services:
           path: src
         - action: rebuild
           path: pom.xml
+#
