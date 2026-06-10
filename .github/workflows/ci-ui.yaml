@@ -1,7 +1,7 @@
 name: CI - UI Service
 
 on:
-  push:
+  pull_request:
     branches: [ "main" ]
     paths:
       - 'src/ui/**'
@@ -33,7 +33,7 @@ jobs:
           distribution: 'corretto'
           cache: 'maven'
           cache-dependency-path: ${{ env.CONTEXT_PATH }}/pom.xml
-          
+
       - name: Compile Java Code
         run: |
           cd ${{ env.CONTEXT_PATH }}
