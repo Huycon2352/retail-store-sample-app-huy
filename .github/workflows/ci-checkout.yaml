@@ -36,8 +36,9 @@ jobs:
       - name: Install Dependencies & Build NestJS
         run: |
           cd ${{ env.CONTEXT_PATH }}
-          yarn install --frozen-lockfile
-          yarn build --skip-nx-cache # Hoặc lệnh build chuẩn trong package.json của bạn
+          # Dùng --immutable thay cho --frozen-lockfile theo chuẩn Yarn v4
+          yarn install --immutable 
+          # Bỏ cờ --skip-nx-cache đi vì lệnh build chuẩn của NestJS không hỗ trợ cờ này yarn build
           
       # -------------------------------------------------------------
       # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD (CHO JS/TS)
