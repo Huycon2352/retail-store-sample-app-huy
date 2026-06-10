@@ -110,6 +110,14 @@ jobs:
           cache-to: type=gha,mode=max
 
       # ==========================================================
+      # INSTALL KUSTOMIZE
+      # ==========================================================
+      - name: Install Kustomize
+        run: |
+          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
+          sudo mv kustomize /usr/local/bin/
+
+      # ==========================================================
       # UPDATE GITOPS REPO
       # ==========================================================
 
@@ -118,19 +126,20 @@ jobs:
 
           git clone https://${{ secrets.GITOPS_TOKEN }}@github.com/${{ env.GITOPS_REPO }}.git gitops
 
-          cd gitops
+          cd gitops/k8s/overlays/dev
 
-          FILE=environments/dev/services/${{ matrix.service }}/values.yaml
+          kustomize edit set image \
+          ${{ matrix.service }}=${{ env.AWS_ECR_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
 
-          sed -i "s|tag:.*|tag: \"${{ github.sha }}\"|g" $FILE
+          cd ../../..
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add $FILE
+          git add k8s/overlays/dev/kustomization.yaml
 
           if git diff --cached --quiet; then
-            echo "No changes."
+            echo "No changes"
             exit 0
           fi
 

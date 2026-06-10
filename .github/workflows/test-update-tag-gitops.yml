@@ -1,0 +1,79 @@
+name: Test GitOps Update Only (No Build)
+
+on:
+  # Cho phép bạn bấm nút chạy bằng tay trên giao diện GitHub Actions
+  workflow_dispatch:
+    inputs:
+      service_name:
+        description: 'Tên service muốn test (vd: ui, catalog, orders, cart, checkout)'
+        required: true
+        default: 'orders'
+        type: choice
+        options:
+          - ui
+          - catalog
+          - checkout
+          - cart
+          - orders
+      test_tag:
+        description: 'Image Tag giả lập để test (vd: test-123 hoặc commit SHA)'
+        required: true
+        default: 'test-tag-123'
+
+env:
+  AWS_ECR_REGISTRY: ${{ vars.AWS_ECR_REGISTRY }}
+  GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+
+jobs:
+  test-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ==========================================================
+      # INSTALL KUSTOMIZE
+      # ==========================================================
+      # Cài đặt kustomize mất tầm 2-3 giây
+      - name: Install Kustomize
+        run: |
+          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
+          sudo mv kustomize /usr/local/bin/
+
+      # ==========================================================
+      # UPDATE GITOPS REPO (Bê nguyên logic cũ qua)
+      # ==========================================================
+      - name: Update GitOps Manifest
+        run: |
+          # 1. Clone repo GitOps bằng token
+          git clone https://${{ secrets.GITOPS_TOKEN }}@github.com/${{ env.GITOPS_REPO }}.git gitops
+          cd gitops
+
+          # 2. Định nghĩa file kustomization cần sửa
+          FILE=k8s/overlays/dev/kustomization.yaml
+          
+          # Lấy thông tin từ các ô Input bạn nhập lúc bấm nút chạy
+          SERVICE_NAME="${{ github.event.inputs.service_name }}"
+          MOCK_TAG="${{ github.event.inputs.test_tag }}"
+          
+          echo "Đang test cập nhật service: $SERVICE_NAME với tag: $MOCK_TAG"
+
+          # 3. Chạy kustomize để sửa tag trực tiếp
+          kustomize edit set image \
+            $SERVICE_NAME=${{ env.AWS_ECR_REGISTRY }}/$SERVICE_NAME:$MOCK_TAG
+
+          # 4. Cấu hình Git Bot
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 5. Add file thay đổi
+          git add $FILE
+
+          # 6. Kiểm tra xem file thực sự có thay đổi không
+          if git diff --cached --quiet; then
+            echo "Không có thay đổi nào so với trước đó! Bạn hãy thử nhập một tag mới hoàn toàn xem."
+            exit 0
+          fi
+
+          # 7. Commit và push lên nhánh main của repo GitOps
+          git commit -m "chore(test): test update $SERVICE_NAME image to $MOCK_TAG"
+          git pull --rebase origin main
+          git push origin main
