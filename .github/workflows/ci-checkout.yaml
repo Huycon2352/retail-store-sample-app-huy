@@ -11,7 +11,7 @@ env:
   AWS_REGION: ap-southeast-1
   ENVIRONMENT: dev
   CONTEXT_PATH: ./src/checkout
-  IMAGE_NAME: devsecops-dev-checkout # <--- Đổi thành biến định nghĩa tên Image cục bộ
+  IMAGE_NAME: devsecops-dev-checkout 
   SONAR_PROJECT_KEY: devsecops-retail-store-checkout
   SONAR_ORGANIZATION: huycon2352code
 
@@ -25,22 +25,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      # ---- 1. TỐI ƯU CACHE CHO MAVEN DEPENDENCIES ----
-      - name: Set up JDK 21 với Cache của Maven
-        uses: actions/setup-java@v4
+      # ---- 1. TỐI ƯU CACHE CHO NODE DỰA TRÊN YARN ----
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
         with:
-          java-version: '21'
-          distribution: 'corretto'
-          cache: 'maven'
+          node-version: '20' # Hoặc phiên bản Node phù hợp với NestJS v11 của bạn
+          cache: 'yarn'      # <--- Tự động cache các thư viện Yarn node_modules
+          cache-dependency-path: ${{ env.CONTEXT_PATH }}/yarn.lock
 
-      - name: Compile Java Code
+      - name: Install Dependencies & Build NestJS
         run: |
           cd ${{ env.CONTEXT_PATH }}
-          chmod +x mvnw
-          ./mvnw compile -DskipTests
+          yarn install --frozen-lockfile
+          yarn build --skip-nx-cache # Hoặc lệnh build chuẩn trong package.json của bạn
           
       # -------------------------------------------------------------
-      # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD
+      # 2. QUÉT MÃ NGUỒN (SAST) VỚI SONARQUBE CLOUD (CHO JS/TS)
       # -------------------------------------------------------------
       - name: SonarCloud Scan
         uses: SonarSource/sonarqube-scan-action@v5
@@ -52,8 +52,9 @@ jobs:
             -Dsonar.projectKey=${{ env.SONAR_PROJECT_KEY }}
             -Dsonar.organization=${{ env.SONAR_ORGANIZATION }}
             -Dsonar.projectBaseDir=${{ env.CONTEXT_PATH }}
-            -Dsonar.sources=.
-            -Dsonar.java.binaries=target/classes
+            -Dsonar.sources=src
+            -Dsonar.tests=test
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
             -X
 
       # ---- 3. TỐI ƯU CACHE CHO DOCKER LAYERS (BUILDKIT) ----
@@ -67,10 +68,9 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.CONTEXT_PATH }}
-          # Thay đổi cấu trúc tag ở đây, không dùng biến ecr outputs nữa
           tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
           push: false 
-          load: true  # Vẫn giữ load=true để đẩy image vào Docker daemon của Runner
+          load: true  
           cache-from: type=gha 
           cache-to: type=gha,mode=max 
 
@@ -82,5 +82,5 @@ jobs:
         with:
           image-ref: '${{ env.IMAGE_NAME }}:${{ github.sha }}'
           format: 'table'
-          exit-code: '0' 
+          exit-code: '0' # Giữ nguyên '0' để không chặn pipeline nếu phát hiện lỗi bảo mật image lúc này
           severity: 'CRITICAL,HIGH'
