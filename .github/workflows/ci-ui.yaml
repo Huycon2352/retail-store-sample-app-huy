@@ -32,7 +32,8 @@ jobs:
           java-version: '21'
           distribution: 'corretto'
           cache: 'maven'
-
+          cache-dependency-path: ${{ env.CONTEXT_PATH }}/pom.xml
+          
       - name: Compile Java Code
         run: |
           cd ${{ env.CONTEXT_PATH }}
