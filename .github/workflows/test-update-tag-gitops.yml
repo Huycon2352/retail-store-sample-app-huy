@@ -45,7 +45,7 @@ jobs:
         run: |
           # 1. Clone repo GitOps bằng token
           git clone https://${{ secrets.GITOPS_TOKEN }}@github.com/${{ env.GITOPS_REPO }}.git gitops
-          cd gitops
+          cd gitops/k8s/overlays/dev
 
           # 2. Định nghĩa file kustomization cần sửa
           FILE=k8s/overlays/dev/kustomization.yaml
