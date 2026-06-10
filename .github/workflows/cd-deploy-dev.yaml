@@ -110,12 +110,15 @@ jobs:
           cache-to: type=gha,mode=max
 
       # ==========================================================
-      # INSTALL KUSTOMIZE
+      # INSTALL YQ 
       # ==========================================================
-      - name: Install Kustomize
+      - name: Install yq
         run: |
-          curl -s https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh | bash
-          sudo mv kustomize /usr/local/bin/
+          sudo wget -q https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 \
+            -O /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+
+          yq --version
 
       # ==========================================================
       # UPDATE GITOPS REPO
